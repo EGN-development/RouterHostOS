@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "routerhost-os"
+version = "0.1.0"
+description = "RouterHost OS router appliance control plane"
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
+
+[project.scripts]
+rhos = "rhos.cli:main"
+rhos-api = "rhos.__main__:main"
+rhos-admin = "rhos.admin:main"
+
+[tool.setuptools]
+packages = ["rhos"]

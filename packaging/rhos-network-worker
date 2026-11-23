@@ -1,0 +1,62 @@
+#!/usr/bin/python3
+"""Privileged worker accepting only validated RHOS network state documents."""
+
+import grp
+import json
+import os
+import socket
+import sys
+import struct
+from pathlib import Path
+
+from rhos.config import ConfigError, validate
+from rhos.linux import apply_config
+
+SOCKET_PATH = Path("/run/rhos/network.sock")
+MAX_REQUEST = 1024 * 1024
+
+
+def process_connection(connection: socket.socket) -> None:
+    credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+    pid, uid, gid = struct.unpack("3i", credentials)
+    allowed_gid = grp.getgrnam("rhos").gr_gid
+    if uid != 0 and gid != allowed_gid and allowed_gid not in os.getgrouplist(str(uid), gid):
+        raise PermissionError("peer is not in the rhos management group")
+    chunks = bytearray()
+    while len(chunks) <= MAX_REQUEST:
+        block = connection.recv(min(65536, MAX_REQUEST + 1 - len(chunks)))
+        if not block:
+            break
+        chunks.extend(block)
+        if b"\n" in block:
+            break
+    if len(chunks) > MAX_REQUEST:
+        raise ValueError("request too large")
+    request = bytes(chunks).split(b"\n", 1)[0]
+    document = json.loads(request)
+    if not isinstance(document, dict) or set(document) != {"operation", "config"} or document["operation"] != "apply":
+        raise ValueError("unsupported worker operation")
+    config = validate(document["config"])
+    apply_config(config)
+    connection.sendall(b'{"ok":true}\n')
+
+
+def serve() -> int:
+    if os.getenv("LISTEN_PID") != str(os.getpid()) or os.getenv("LISTEN_FDS") != "1":
+        raise RuntimeError("worker must be started by rhos-network.socket")
+    server = socket.socket(fileno=3)
+    while True:
+        connection, _ = server.accept()
+        with connection:
+            try:
+                process_connection(connection)
+            except Exception as exc:
+                message = json.dumps({"ok": False, "error": str(exc)[:512]}).encode() + b"\n"
+                connection.sendall(message)
+    return 0
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--serve"]:
+        raise SystemExit("usage: rhos-network-worker --serve")
+    raise SystemExit(serve())

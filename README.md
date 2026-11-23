@@ -63,8 +63,12 @@ python -m unittest discover -s tests -v
 
 ## Debian service packaging
 
-The current installer targets an existing Debian host. It does not build or install a bootable appliance image. Review `packaging/install-debian.sh` before running it as root. It installs the control plane and systemd unit, then starts the API loopback-only. It installs Python dependencies from package indexes, so provision network access to PyPI before use.
+The current installer targets an existing Debian host. It does not build or install a bootable appliance image. Review `packaging/install-debian.sh` before running it as root. It installs the control plane and systemd units, then starts the API loopback-only. It installs Python dependencies from package indexes, so provision network access to PyPI before use.
 
-The service runs unprivileged and cannot apply kernel network configuration. Network apply stays disabled in this service profile until a separate privileged, narrowly scoped network worker is implemented.
+The API service runs unprivileged. A separate root worker accepts only validated desired network configuration over a group-restricted Unix socket and has only `CAP_NET_ADMIN`. The Debian service enables apply through this worker. Set the worker socket path through the supported system configuration when running another packaging profile.
+
+## Appliance image
+
+The rootful Debian 13 x86_64 image builder is in `packaging/image-builder`. Run it only in a disposable builder VM. It requires loop devices and system image tooling. The companion QEMU test checks that the image reaches systemd multi-user and starts the API. Neither image build nor QEMU boot has run in this development container.
 
 See `docs/ARCHITECTURE.md` for boundaries and `docs/PROGRESS.md` for verified status and next steps. No bootable QCOW2/RAW artifact is produced by this prototype.

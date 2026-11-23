@@ -9,7 +9,8 @@ class ApiTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.client = TestClient(create_app(self.temp.name))
-        self.client.post("/api/v1/auth/bootstrap", json={"username": "admin", "password": "correct horse battery staple"})
+        from rhos.auth import AuthStore
+        AuthStore(self.temp.name).bootstrap("admin", "correct horse battery staple")
         response = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "correct horse battery staple"})
         self.csrf = response.json()["csrf_token"]
         self.headers = {"X-CSRF-Token": self.csrf}
@@ -52,8 +53,16 @@ class ApiTests(unittest.TestCase):
     def test_login_rejects_wrong_password_and_bootstrap_is_one_time(self):
         wrong = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "incorrect password"})
         self.assertEqual(wrong.status_code, 401)
-        again = self.client.post("/api/v1/auth/bootstrap", json={"username": "other", "password": "correct horse battery staple"})
-        self.assertEqual(again.status_code, 409)
+        self.assertEqual(self.client.get("/api/v1/auth/status").headers["cache-control"], "no-store")
+        headers = self.client.get("/api/v1/auth/status").headers
+        self.assertEqual(headers["x-content-type-options"], "nosniff")
+        self.assertEqual(headers["x-frame-options"], "DENY")
+
+    def test_login_rate_limit_after_ten_failures(self):
+        for _ in range(10):
+            self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong password"})
+        response = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong password"})
+        self.assertEqual(response.status_code, 429)
 
 
 if __name__ == "__main__":

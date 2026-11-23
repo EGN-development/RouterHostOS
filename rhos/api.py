@@ -5,16 +5,18 @@ from __future__ import annotations
 import os
 import hmac
 import html
+import time
+import threading
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict
 
 from . import __version__
 from .config import ConfigError, Conflict, Store
-from .auth import AuthError, AuthStore
+from .auth import AuthStore
 from . import linux
 
 
@@ -35,12 +37,6 @@ class RollbackBody(BaseModel):
     expected_revision: int
 
 
-class BootstrapBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    username: str
-    password: str
-
-
 class LoginBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
@@ -55,6 +51,18 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
     store = Store(state_dir or os.getenv("RHOS_STATE_DIR", "/var/lib/rhos"))
     auth = AuthStore(state_dir or os.getenv("RHOS_STATE_DIR", "/var/lib/rhos"))
     app = FastAPI(title="RouterHost OS API", version=__version__)
+    login_attempts: dict[str, list[float]] = {}
+    login_lock = threading.Lock()
+
+    @app.middleware("http")
+    async def secure_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def current_admin(request: Request, csrf: bool = False):
         session = auth.read_session(request.cookies.get("rhos_session"))
@@ -65,11 +73,6 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
         if csrf and not hmac_compare(request.headers.get("X-CSRF-Token", ""), session["csrf"]):
             raise HTTPException(status_code=403, detail="invalid CSRF token")
         return session
-
-    def require_local(request: Request):
-        address = request.client.host if request.client else ""
-        if address not in ("127.0.0.1", "::1", "testclient"):
-            raise HTTPException(status_code=403, detail="initial setup is available only from localhost")
 
     def call(action):
         try:
@@ -109,21 +112,19 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
     def auth_status():
         return {"initialized": auth.initialized()}
 
-    @app.post("/api/v1/auth/bootstrap")
-    def bootstrap(body: BootstrapBody, request: Request):
-        require_local(request)
-        try:
-            auth.bootstrap(body.username, body.password)
-        except AuthError as exc:
-            raise HTTPException(status_code=409 if auth.initialized() else 422, detail=str(exc)) from exc
-        except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=500, detail="administrator bootstrap failed") from exc
-        return {"initialized": True}
-
     @app.post("/api/v1/auth/login")
-    def login(body: LoginBody, response: Response):
+    def login(body: LoginBody, request: Request, response: Response):
         if not auth.initialized():
             raise HTTPException(status_code=503, detail="administrator setup is required")
+        address = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with login_lock:
+            recent = [attempt for attempt in login_attempts.get(address, []) if now - attempt < 60]
+            if len(recent) >= 10:
+                login_attempts[address] = recent
+                raise HTTPException(status_code=429, detail="too many login attempts")
+            recent.append(now)
+            login_attempts[address] = recent
         if not auth.verify(body.username, body.password):
             raise HTTPException(status_code=401, detail="invalid username or password")
         token, csrf = auth.create_session(body.username)
@@ -200,4 +201,5 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
         return call(lambda: store.rollback(body.revision, body.expected_revision))
 
     app.state.rhos_store = store
+    app.state.rhos_auth = auth
     return app

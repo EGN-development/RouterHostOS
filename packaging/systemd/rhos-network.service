@@ -1,0 +1,28 @@
+[Unit]
+Description=RHOS privileged network worker
+Requires=rhos-network.socket
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=rhos
+ExecStart=/usr/lib/rhos/rhos-network-worker --serve
+Restart=on-failure
+RestartSec=2
+UMask=0007
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+ReadWritePaths=/run/rhos
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ StateDirectory=rhos
 StateDirectoryMode=0700
 Environment=RHOS_STATE_DIR=/var/lib/rhos
 Environment=RHOS_LISTEN=127.0.0.1:8080
+Environment=RHOS_ALLOW_NETWORK_APPLY=1
 ExecStart=/usr/lib/rhos/venv/bin/python -m rhos --listen ${RHOS_LISTEN}
 WorkingDirectory=/usr/lib/rhos
 Restart=on-failure
@@ -29,6 +30,8 @@ MemoryDenyWriteExecute=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
+ReadWritePaths=/run/rhos
+SupplementaryGroups=rhos
 
 [Install]
 WantedBy=multi-user.target

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
 from typing import Any
 
@@ -127,3 +128,31 @@ def apply_config(config: dict[str, Any]) -> None:
             subprocess.run(["ip", "route", "replace", destination, "via", gateway, "metric", str(metric)], capture_output=True, timeout=15)
         subprocess.run(["sysctl", "-w", f"net.ipv4.ip_forward={saved_forwarding}"], capture_output=True, timeout=15)
         raise
+
+
+def apply_via_worker(config: dict[str, Any], socket_path: str = "/run/rhos/network.sock") -> None:
+    request = json.dumps({"operation": "apply", "config": config}, separators=(",", ":")).encode() + b"\n"
+    if len(request) > 1024 * 1024:
+        raise RuntimeError("network configuration exceeds worker request limit")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(30)
+        client.connect(socket_path)
+        client.sendall(request)
+        client.shutdown(socket.SHUT_WR)
+        response = bytearray()
+        while len(response) <= 4096:
+            block = client.recv(4097 - len(response))
+            if not block:
+                break
+            response.extend(block)
+            if b"\n" in block:
+                break
+    if len(response) > 4096:
+        raise RuntimeError("network worker returned an oversized response")
+    try:
+        result = json.loads(bytes(response).split(b"\n", 1)[0])
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("network worker returned an invalid response") from exc
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        detail = result.get("error", "network apply failed") if isinstance(result, dict) else "network worker returned an invalid response"
+        raise RuntimeError(detail)

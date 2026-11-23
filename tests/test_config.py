@@ -117,10 +117,17 @@ class ConfigTests(unittest.TestCase):
             self.store.commit(0, apply=True)
         self.assertEqual(self.store.snapshot()["revision"], 0)
 
+    def test_network_apply_requires_service_profile_opt_in(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "0"}):
+            with self.assertRaises(ConfigError):
+                self.store.commit(0, apply=True)
+        self.assertEqual(self.store.snapshot()["revision"], 0)
+
     def test_failed_apply_reapplies_previous_desired_state(self):
         self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
-        with patch("rhos.linux.apply_config", side_effect=[None, RuntimeError("new apply failed"), None]) as apply:
-            with patch.dict("os.environ", {"RHOS_APPLY_NETWORK": "1"}):
+        with patch("rhos.linux.apply_via_worker", side_effect=[None, RuntimeError("new apply failed"), None]) as apply:
+            with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}):
                 with self.assertRaises(RuntimeError):
                     self.store.commit(0, apply=True)
         self.assertEqual(apply.call_count, 3)
@@ -131,8 +138,8 @@ class ConfigTests(unittest.TestCase):
 
     def test_persistence_failure_rolls_back_applied_state(self):
         self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
-        with patch("rhos.linux.apply_config") as apply:
-            with patch.dict("os.environ", {"RHOS_APPLY_NETWORK": "1"}):
+        with patch("rhos.linux.apply_via_worker") as apply:
+            with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}):
                 with patch.object(self.store, "_persist", side_effect=OSError("disk full")):
                     with self.assertRaises(OSError):
                         self.store.commit(0, apply=True)

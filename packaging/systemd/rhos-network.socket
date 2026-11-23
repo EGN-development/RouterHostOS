@@ -1,0 +1,13 @@
+[Unit]
+Description=RHOS privileged network control socket
+
+[Socket]
+ListenStream=/run/rhos/network.sock
+SocketUser=root
+SocketGroup=rhos
+SocketMode=0660
+DirectoryMode=0750
+Service=rhos-network.service
+
+[Install]
+WantedBy=sockets.target

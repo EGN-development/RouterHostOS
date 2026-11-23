@@ -15,10 +15,14 @@
 - Web login, protected dashboard, and initial local-only administrator setup command.
 - Debian host installation script and hardened loopback-only unprivileged systemd service unit.
 - Configuration commit compensates kernel network state back to the previous desired configuration when apply or persistence fails.
+- Dedicated capability-limited root network worker with a group-restricted Unix socket protocol. API process receives no network capability.
+- Debian amd64 raw/qcow2 builder and QEMU serial boot smoke script.
 
 ## Verified
 
 - `python -m unittest discover -s tests -v`: 19 tests passed, including simulated apply and persistence failures.
+- Worker protocol tests cover operation allowlisting and worker error handling.
+- API login throttling and browser security response headers.
 - `python -m compileall -q rhos tests`: passed.
 - `git diff --check`: passed.
 - Started the real Uvicorn service and made HTTP requests to system information, dashboard, and configuration endpoints. All returned expected responses.
@@ -28,7 +32,7 @@ The environment does not include nftables, QEMU, Rust/Cargo, or a working Go com
 
 ## Not implemented
 
-Bootable image, installer, TLS termination, granular RBAC/user management, safe-mode confirmed commit timer, atomic network rollback after partial apply, FRR, DHCP/DNS, IPv6, WireGuard, advanced firewall, production frontend, signed updates, and multi-VM integration tests.
+Actual bootable image build and QEMU boot verification, TLS termination, granular RBAC/user management, crash-safe confirmed commit timer, crash-atomic network rollback, FRR, DHCP/DNS, IPv6, WireGuard, advanced firewall, production frontend, signed updates, and multi-VM integration tests.
 
 ## Next step
 

@@ -223,15 +223,15 @@ class Store:
                     self._persist()
                     return self.snapshot()
                 if apply:
-                    if os.getenv("RHOS_APPLY_NETWORK") != "1":
-                        raise ConfigError("network apply is disabled. Set RHOS_APPLY_NETWORK=1 explicitly.")
-                    from .linux import apply_config
-                    apply_config(self.state["config"])
+                    if os.getenv("RHOS_ALLOW_NETWORK_APPLY") != "1":
+                        raise ConfigError("network apply is disabled for this service profile")
+                    from .linux import apply_via_worker
+                    apply_via_worker(self.state["config"])
                     try:
-                        apply_config(candidate)
+                        apply_via_worker(candidate)
                     except Exception:
                         try:
-                            apply_config(self.state["config"])
+                            apply_via_worker(self.state["config"])
                         except Exception as rollback_error:
                             raise ConfigError(f"network apply failed and automatic rollback also failed: {rollback_error}")
                         raise
@@ -247,9 +247,9 @@ class Store:
                 except OSError:
                     self.state = previous
                     if apply:
-                        from .linux import apply_config
+                        from .linux import apply_via_worker
                         try:
-                            apply_config(previous["config"])
+                            apply_via_worker(previous["config"])
                         except Exception as rollback_error:
                             raise ConfigError(f"configuration persistence failed and network rollback also failed: {rollback_error}")
                     raise

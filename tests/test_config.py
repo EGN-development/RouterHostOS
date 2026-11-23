@@ -96,8 +96,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result, "candidate address added")
         self.assertEqual(self.store.snapshot()["candidate"]["addresses"][0]["address"], "192.0.2.1/24")
         self.store.commit(0)
-        self.assertEqual(execute(self.store, "/ip address print"), "192.0.2.1/24         eth1")
+        self.assertEqual(execute(self.store, "/ip address print"), "0    192.0.2.1/24         eth1")
         self.assertNotIn("candidate", self.store.snapshot())
+
+    def test_cli_route_add_set_remove_lifecycle(self):
+        execute(self.store, "/ip route add dst-address=198.51.100.0/24 gateway=192.0.2.254")
+        execute(self.store, "/ip route set numbers=0 metric=25")
+        self.assertEqual(self.store.snapshot()["candidate"]["routes"][0]["metric"], 25)
+        execute(self.store, "/ip route remove numbers=0")
+        self.assertEqual(self.store.snapshot()["candidate"]["routes"], [])
+
+    def test_route_print_shows_candidate_while_active_is_kernel_state(self):
+        execute(self.store, "/ip route add dst-address=198.51.100.0/24 gateway=192.0.2.254")
+        output = execute(self.store, "/ip route print")
+        self.assertIn("198.51.100.0/24", output)
+        self.assertIn("metric=100", output)
+
+    def test_cli_remove_rejects_out_of_range_index(self):
+        with self.assertRaisesRegex(ConfigError, "does not exist"):
+            execute(self.store, "/ip address remove numbers=0")
 
     def test_candidate_persists_across_store_restart(self):
         self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})

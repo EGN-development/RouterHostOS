@@ -197,8 +197,17 @@ class Store:
                 candidate = copy.deepcopy(self.state.get("candidate", self.state["config"]))
                 if operation == "address_add":
                     candidate["addresses"].append({"address": values["address"], "interface": values["interface"]})
+                elif operation == "address_remove":
+                    candidate["addresses"].pop(int(values["numbers"]))
                 elif operation == "route_add":
                     candidate["routes"].append({"dst-address": values["dst-address"], "gateway": values["gateway"], "metric": int(values.get("metric", 100))})
+                elif operation == "route_remove":
+                    candidate["routes"].pop(int(values["numbers"]))
+                elif operation == "route_set":
+                    route = candidate["routes"][int(values["numbers"])]
+                    route["dst-address"] = values.get("dst-address", route["dst-address"])
+                    route["gateway"] = values.get("gateway", route["gateway"])
+                    route["metric"] = int(values.get("metric", route["metric"]))
                 elif operation == "interface_add":
                     candidate["interfaces"].append({"name": values["name"], "enabled": values.get("enabled", "true").lower() == "true", "mtu": int(values.get("mtu", 1500))})
                 elif operation == "nat_add":

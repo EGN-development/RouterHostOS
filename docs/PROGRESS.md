@@ -17,10 +17,11 @@
 - Configuration commit compensates kernel network state back to the previous desired configuration when apply or persistence fails.
 - Dedicated capability-limited root network worker with a group-restricted Unix socket protocol. API process receives no network capability.
 - Debian amd64 raw/qcow2 builder and QEMU serial boot smoke script.
+- Indexed CLI address/route candidate edits, route set/remove, and separate configured versus active route views.
 
 ## Verified
 
-- `python -m unittest discover -s tests -v`: 19 tests passed, including simulated apply and persistence failures.
+- `python -m unittest discover -s tests -v`: 26 tests passed, including worker protocol, candidate editing, and simulated apply/persistence failure coverage.
 - Worker protocol tests cover operation allowlisting and worker error handling.
 - API login throttling and browser security response headers.
 - `python -m compileall -q rhos tests`: passed.
@@ -36,4 +37,4 @@ Actual bootable image build and QEMU boot verification, TLS termination, granula
 
 ## Next step
 
-Run `python -m unittest discover -s tests -v`, review the installer and unit, then add a dedicated privileged network worker and package into a minimal Debian-based image. Validate service startup and boot under QEMU in an environment that provides boot tooling, QEMU, nftables, and isolated network namespace capabilities. Do not describe RHOS as a bootable OS until that boot test passes.
+Run the rootful image builder on a disposable Debian 13 amd64 VM, fix issues found by its QEMU boot smoke test, then add confirmed commit recovery and broader IPv4/IPv6 integration tests in isolated network namespaces. Do not describe RHOS as a bootable OS until that boot test passes.

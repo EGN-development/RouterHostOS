@@ -22,6 +22,16 @@ def parse_values(tokens: list[str]) -> dict[str, str]:
     return values
 
 
+def index_value(values: dict[str, str], collection: list[dict]) -> int:
+    raw_index = values.get("numbers")
+    if raw_index is None or not raw_index.isdigit():
+        raise ConfigError("numbers= must be a nonnegative row index")
+    index = int(raw_index)
+    if index >= len(collection):
+        raise ConfigError(f"row index {index} does not exist")
+    return index
+
+
 def execute(store: Store, command: str) -> str:
     tokens = shlex.split(command)
     if not tokens:
@@ -42,12 +52,22 @@ def execute(store: Store, command: str) -> str:
             for row in interfaces()
         )
     if tokens in (["/ip", "route", "print"], ["route", "print"]):
+        snapshot = store.snapshot()
+        config = snapshot.get("candidate", snapshot["config"])
+        return "\n".join(
+            f"{i:<4} {row['dst-address']:<22} via={row['gateway']} metric={row['metric']}"
+            for i, row in enumerate(config["routes"])
+        ) or "(no configured routes)"
+    if tokens in (["/ip", "route", "active"], ["route", "active"]):
         from .linux import routes
-        return "\n".join(f"{row.get('dst', '?'):<22} via={row.get('gateway', 'connected')} dev={row.get('dev', '?')}" for row in routes())
+        return "\n".join(
+            f"{i:<4} {row.get('dst', '?'):<22} via={row.get('gateway', 'connected')} dev={row.get('dev', '?')}"
+            for i, row in enumerate(routes())
+        )
     if tokens in (["/ip", "address", "print"], ["address", "print"]):
         snapshot = store.snapshot()
         config = snapshot.get("candidate", snapshot["config"])
-        return "\n".join(f"{item['address']:<20} {item['interface']}" for item in config["addresses"]) or "(no configured addresses)"
+        return "\n".join(f"{i:<4} {item['address']:<20} {item['interface']}" for i, item in enumerate(config["addresses"])) or "(no configured addresses)"
     if tokens[:3] == ["/ip", "address", "add"] or tokens[:2] == ["address", "add"]:
         offset = 3 if tokens[0] == "/ip" else 2
         values = parse_values(tokens[offset:])
@@ -56,6 +76,14 @@ def execute(store: Store, command: str) -> str:
         snap = store.snapshot()
         store.mutate(snap["revision"], "address_add", values)
         return "candidate address added"
+    if tokens[:3] == ["/ip", "address", "remove"] or tokens[:2] == ["address", "remove"]:
+        offset = 3 if tokens[0] == "/ip" else 2
+        values = parse_values(tokens[offset:])
+        snap = store.snapshot()
+        config = snap.get("candidate", snap["config"])
+        index = index_value(values, config["addresses"])
+        store.mutate(snap["revision"], "address_remove", {"numbers": str(index)})
+        return "candidate address removed"
     if tokens[:3] == ["/ip", "route", "add"] or tokens[:2] == ["route", "add"]:
         offset = 3 if tokens[0] == "/ip" else 2
         values = parse_values(tokens[offset:])
@@ -64,6 +92,25 @@ def execute(store: Store, command: str) -> str:
         snap = store.snapshot()
         store.mutate(snap["revision"], "route_add", values)
         return "candidate route added"
+    if tokens[:3] == ["/ip", "route", "remove"] or tokens[:2] == ["route", "remove"]:
+        offset = 3 if tokens[0] == "/ip" else 2
+        values = parse_values(tokens[offset:])
+        snap = store.snapshot()
+        config = snap.get("candidate", snap["config"])
+        index = index_value(values, config["routes"])
+        store.mutate(snap["revision"], "route_remove", {"numbers": str(index)})
+        return "candidate route removed"
+    if tokens[:3] == ["/ip", "route", "set"] or tokens[:2] == ["route", "set"]:
+        offset = 3 if tokens[0] == "/ip" else 2
+        values = parse_values(tokens[offset:])
+        snap = store.snapshot()
+        config = snap.get("candidate", snap["config"])
+        index = index_value(values, config["routes"])
+        changes = {key: value for key, value in values.items() if key in {"dst-address", "gateway", "metric"}}
+        if not changes:
+            raise ConfigError("route set requires dst-address=, gateway=, or metric=")
+        store.mutate(snap["revision"], "route_set", {"numbers": str(index), **changes})
+        return "candidate route updated"
     if tokens in (["/system", "configuration", "diff"], ["system", "configuration", "diff"], ["configuration", "diff"]):
         import json
         return json.dumps(store.diff(), indent=2)

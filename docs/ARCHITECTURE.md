@@ -11,3 +11,5 @@ The first increment uses Python 3.11, FastAPI, and standard-library JSON persist
 `rhos.api` serves the versioned HTTP API and a minimal server-rendered page. Unauthenticated requests do not expose the configuration. It defaults to loopback. There is one administrator role at this stage, without user administration or granular RBAC.
 
 The next architectural increments are secure access and confirmed commit/rollback, transactional network apply with namespace-backed integration tests, packaging the control plane in a Debian image, then FRR and richer network features.
+
+The Debian host service is deliberately unprivileged and systemd-hardened. The API can validate and persist desired configuration, but a separate privileged network worker is still required before the packaged service can apply it to the kernel safely. The installer is not an appliance-image builder.

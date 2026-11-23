@@ -1,0 +1,34 @@
+[Unit]
+Description=RouterHost OS management API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rhos
+Group=rhos
+StateDirectory=rhos
+StateDirectoryMode=0700
+Environment=RHOS_STATE_DIR=/var/lib/rhos
+Environment=RHOS_LISTEN=127.0.0.1:8080
+ExecStart=/usr/lib/rhos/venv/bin/python -m rhos --listen ${RHOS_LISTEN}
+WorkingDirectory=/usr/lib/rhos
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -13,6 +13,7 @@
 - nftables policy generation for RHOS-owned IPv4 NAT and default-drop forward filtering, plus desired-state address/route reconciliation with compensating rollback.
 - Live Ethernet inventory joins link details, counters, and addresses, exposed through the API and RouterOS-style CLI.
 - Web login, protected dashboard, and initial local-only administrator setup command.
+- Debian host installation script and hardened loopback-only unprivileged systemd service unit.
 
 ## Verified
 
@@ -30,4 +31,4 @@ Bootable image, installer, TLS termination, granular RBAC/user management, safe-
 
 ## Next step
 
-Run `python -m unittest discover -s tests -v`, fix failures, then package into a minimal Debian-based image and validate boot under QEMU in an environment that provides a kernel, boot tooling, QEMU, nftables, and isolated network namespace capabilities. Do not describe RHOS as a bootable OS until that boot test passes.
+Run `python -m unittest discover -s tests -v`, review the installer and unit, then add a dedicated privileged network worker and package into a minimal Debian-based image. Validate service startup and boot under QEMU in an environment that provides boot tooling, QEMU, nftables, and isolated network namespace capabilities. Do not describe RHOS as a bootable OS until that boot test passes.

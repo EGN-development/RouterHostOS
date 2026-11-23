@@ -11,6 +11,8 @@
 - Candidate changes persist through restart, and CLI displays candidate addresses.
 - First administrator bootstrap, scrypt password storage, signed short-lived sessions, protected configuration reads, CSRF checks on mutations, and CLI commit authentication.
 - nftables policy generation for RHOS-owned IPv4 NAT and default-drop forward filtering, plus desired-state address/route reconciliation with compensating rollback.
+- Live Ethernet inventory joins link details, counters, and addresses, exposed through the API and RouterOS-style CLI.
+- Web login, protected dashboard, and initial local-only administrator setup command.
 
 ## Verified
 

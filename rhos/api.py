@@ -144,6 +144,14 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
         except (RuntimeError, OSError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    @app.get("/api/v1/interfaces/ethernet")
+    def get_ethernet_interfaces(request: Request):
+        current_admin(request)
+        try:
+            return [item for item in linux.interfaces() if item["kind"] == "ether"]
+        except (RuntimeError, OSError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     @app.get("/api/v1/ip/addresses")
     def get_addresses(request: Request):
         current_admin(request)

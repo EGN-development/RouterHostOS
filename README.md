@@ -6,7 +6,7 @@ RouterHost OS is an early Linux router appliance project. The current repository
 
 - Persistent JSON configuration with schema validation, revision history, and optimistic revision checks.
 - API and interactive CLI use the same configuration service.
-- Read-only interface and route inventory on Linux.
+- Read-only interface, address, link state, counters, and route inventory from Linux.
 - Optional application of IPv4 forwarding, addresses, static routes, and an RHOS-owned nftables forward/NAT policy. Applying host networking is disabled unless explicitly enabled.
 - Server-rendered management page.
 
@@ -48,6 +48,7 @@ CLI changes update the candidate configuration only. Interactive commit checks t
 
 - `GET /api/v1/system`
 - `GET /api/v1/interfaces`
+- `GET /api/v1/interfaces/ethernet`
 - `GET /api/v1/ip/addresses`
 - `GET /api/v1/ip/routes`
 - `GET /api/v1/configuration`

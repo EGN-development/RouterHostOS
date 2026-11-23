@@ -16,17 +16,27 @@ def run(argv: list[str], *, input_text: str | None = None) -> str:
 
 def interfaces() -> list[dict[str, Any]]:
     data = json.loads(run(["ip", "-j", "-details", "link", "show"]))
-    return [
-        {
+    address_data = json.loads(run(["ip", "-j", "address", "show"]))
+    addresses_by_link = {
+        item.get("ifname"): [
+            {"address": address.get("local"), "prefix_length": address.get("prefixlen"), "family": address.get("family"), "scope": address.get("scope")}
+            for address in item.get("addr_info", [])
+        ]
+        for item in address_data
+    }
+    result = []
+    for item in data:
+        result.append({
             "name": item.get("ifname", ""),
             "state": item.get("operstate", "UNKNOWN"),
             "mtu": item.get("mtu"),
             "mac": item.get("address"),
-            "rx_bytes": item.get("stats64", {}).get("rx", {}).get("bytes"),
-            "tx_bytes": item.get("stats64", {}).get("tx", {}).get("bytes"),
-        }
-        for item in data
-    ]
+            "kind": item.get("linkinfo", {}).get("info_kind", "ether"),
+            "addresses": addresses_by_link.get(item.get("ifname"), []),
+            "rx": item.get("stats64", {}).get("rx", {}),
+            "tx": item.get("stats64", {}).get("tx", {}),
+        })
+    return result
 
 
 def addresses() -> list[dict[str, Any]]:

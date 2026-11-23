@@ -4,6 +4,7 @@ from unittest.mock import patch
 from rhos.config import ConfigError, Conflict, DEFAULT, Store, validate
 from rhos.cli import execute
 from rhos.linux import apply_config, firewall_script
+from rhos import linux
 
 
 class ConfigTests(unittest.TestCase):
@@ -79,6 +80,15 @@ class ConfigTests(unittest.TestCase):
         self.assertIn(["ip", "address", "replace", "192.0.2.1/24", "dev", "lan0"], argv)
         self.assertIn(["ip", "route", "replace", "198.51.100.0/24", "via", "192.0.2.254", "metric", "10"], argv)
         self.assertIn(["sysctl", "-w", "net.ipv4.ip_forward=1"], argv)
+
+    def test_interface_inventory_joins_live_addresses_and_counters(self):
+        link_json = '[{"ifname":"eth0","operstate":"UP","mtu":1500,"address":"02:00:00:00:00:01","stats64":{"rx":{"bytes":123,"packets":4},"tx":{"bytes":456,"packets":5}},"linkinfo":{"info_kind":"vlan"}}]'
+        address_json = '[{"ifname":"eth0","addr_info":[{"family":"inet","local":"192.0.2.1","prefixlen":24,"scope":"global"}]}]'
+        with patch("rhos.linux.run", side_effect=[link_json, address_json]):
+            inventory = linux.interfaces()
+        self.assertEqual(inventory[0]["kind"], "vlan")
+        self.assertEqual(inventory[0]["addresses"][0]["address"], "192.0.2.1")
+        self.assertEqual(inventory[0]["rx"]["bytes"], 123)
 
     def test_cli_and_store_share_candidate(self):
         result = execute(self.store, "/ip address add address=192.0.2.1/24 interface=eth1")

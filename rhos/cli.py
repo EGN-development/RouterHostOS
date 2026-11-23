@@ -30,7 +30,17 @@ def execute(store: Store, command: str) -> str:
         return f"RouterHost OS 0.1.0\n{store.snapshot()['config']['system']['hostname']} revision={store.snapshot()['revision']}"
     if tokens in (["/interface", "print"], ["interface", "print"]):
         from .linux import interfaces
-        return "\n".join(f"{row['name']:<16} {row['state']:<10} mtu={row['mtu']}" for row in interfaces())
+        return "\n".join(
+            f"{row['name']:<16} {row['state']:<10} mtu={row['mtu']} mac={row['mac'] or '-'} "
+            f"rx={row['rx'].get('bytes', 0)} tx={row['tx'].get('bytes', 0)}"
+            for row in interfaces()
+        )
+    if tokens in (["/interface", "ethernet", "print"], ["interface", "ethernet", "print"]):
+        from .linux import interfaces
+        return "\n".join(
+            f"{row['name']:<16} mac={row['mac'] or '-'} state={row['state']} mtu={row['mtu']}"
+            for row in interfaces()
+        )
     if tokens in (["/ip", "route", "print"], ["route", "print"]):
         from .linux import routes
         return "\n".join(f"{row.get('dst', '?'):<22} via={row.get('gateway', 'connected')} dev={row.get('dev', '?')}" for row in routes())

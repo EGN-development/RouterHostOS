@@ -14,10 +14,11 @@
 - Live Ethernet inventory joins link details, counters, and addresses, exposed through the API and RouterOS-style CLI.
 - Web login, protected dashboard, and initial local-only administrator setup command.
 - Debian host installation script and hardened loopback-only unprivileged systemd service unit.
+- Configuration commit compensates kernel network state back to the previous desired configuration when apply or persistence fails.
 
 ## Verified
 
-- `python -m unittest discover -s tests -v`: 16 tests passed after authentication and network policy coverage.
+- `python -m unittest discover -s tests -v`: 19 tests passed, including simulated apply and persistence failures.
 - `python -m compileall -q rhos tests`: passed.
 - `git diff --check`: passed.
 - Started the real Uvicorn service and made HTTP requests to system information, dashboard, and configuration endpoints. All returned expected responses.

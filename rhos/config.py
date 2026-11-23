@@ -10,7 +10,6 @@ import tempfile
 import threading
 import time
 import fcntl
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -219,11 +218,23 @@ class Store:
                     raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
                 candidate = copy.deepcopy(self.state.get("candidate", self.state["config"]))
                 validate(candidate)
+                if candidate == self.state["config"] and not apply:
+                    self.state.pop("candidate", None)
+                    self._persist()
+                    return self.snapshot()
                 if apply:
                     if os.getenv("RHOS_APPLY_NETWORK") != "1":
                         raise ConfigError("network apply is disabled. Set RHOS_APPLY_NETWORK=1 explicitly.")
                     from .linux import apply_config
-                    apply_config(candidate)
+                    apply_config(self.state["config"])
+                    try:
+                        apply_config(candidate)
+                    except Exception:
+                        try:
+                            apply_config(self.state["config"])
+                        except Exception as rollback_error:
+                            raise ConfigError(f"network apply failed and automatic rollback also failed: {rollback_error}")
+                        raise
                 previous = self.state
                 next_revision = previous["revision"] + 1
                 self.state = {
@@ -235,6 +246,12 @@ class Store:
                     self._persist()
                 except OSError:
                     self.state = previous
+                    if apply:
+                        from .linux import apply_config
+                        try:
+                            apply_config(previous["config"])
+                        except Exception as rollback_error:
+                            raise ConfigError(f"configuration persistence failed and network rollback also failed: {rollback_error}")
                     raise
                 return self.snapshot()
 

@@ -16,7 +16,7 @@ class ApiTests(unittest.TestCase):
         self.client.cookies.set("rhos_session", self.client.cookies.get("rhos_session"), domain="testserver.local", path="/")
 
     def test_configuration_requires_revision_and_commit(self):
-        config = {"system": {"hostname": "edge01"}, "interfaces": [], "addresses": [], "routes": [], "firewall": {"nat": []}}
+        config = {"system": {"hostname": "edge01"}, "interfaces": [], "addresses": [], "routes": [], "firewall": {"forward": [], "nat": []}}
         response = self.client.put("/api/v1/configuration", json={"config": config}, headers=self.headers)
         self.assertEqual(response.status_code, 428)
         response = self.client.put("/api/v1/configuration", headers={"If-Match": "0", **self.headers}, json={"config": config})
@@ -33,7 +33,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(anonymous.status_code, 401)
 
     def test_diff_reports_candidate_and_revision_conflict(self):
-        config = {"system": {"hostname": "edge01"}, "interfaces": [], "addresses": [], "routes": [], "firewall": {"nat": []}}
+        config = {"system": {"hostname": "edge01"}, "interfaces": [], "addresses": [], "routes": [], "firewall": {"forward": [], "nat": []}}
         response = self.client.put("/api/v1/configuration", headers={"If-Match": "0", **self.headers}, json={"config": config})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.client.get("/api/v1/configuration/diff").json()["changed"])

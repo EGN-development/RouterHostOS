@@ -1,7 +1,9 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from rhos.config import ConfigError, Conflict, DEFAULT, Store, validate
 from rhos.cli import execute
+from rhos.linux import apply_config, firewall_script
 
 
 class ConfigTests(unittest.TestCase):
@@ -28,6 +30,55 @@ class ConfigTests(unittest.TestCase):
         config["addresses"] = [{"address": "not-an-ip", "interface": "eth1"}]
         with self.assertRaises(ConfigError):
             validate(config)
+
+    def test_firewall_default_drops_forward_and_allows_established(self):
+        script = firewall_script(DEFAULT)
+        self.assertIn("policy drop", script)
+        self.assertIn("ct state established,related accept", script)
+
+    def test_firewall_rule_uses_validated_interface_tokens(self):
+        config = {
+            "system": {"hostname": "router01"}, "interfaces": [], "addresses": [], "routes": [],
+            "firewall": {"forward": [{"in-interface": "lan0", "out-interface": "wan0", "action": "accept"}], "nat": []},
+        }
+        validate(config)
+        self.assertIn('iifname "lan0" oifname "wan0" accept', firewall_script(config))
+        config["firewall"]["forward"][0]["in-interface"] = 'lan0"; flush ruleset; #'
+        with self.assertRaises(ConfigError):
+            validate(config)
+
+    def test_apply_config_diffs_owned_addresses_and_routes(self):
+        config = {
+            "system": {"hostname": "router01"}, "interfaces": [],
+            "addresses": [{"address": "192.0.2.1/24", "interface": "lan0"}],
+            "routes": [{"dst-address": "198.51.100.0/24", "gateway": "192.0.2.254", "metric": 10}],
+            "firewall": {"forward": [], "nat": []},
+        }
+        responses = [
+            '{"nftables":[]}',
+            '[{"ifname":"lan0","addr_info":[]}]',
+            '[]',
+        ]
+        commands = []
+
+        def fake_run(argv, input_text=None):
+            commands.append((argv, input_text))
+            if argv[:3] == ["nft", "-j", "list"]:
+                return responses[0]
+            if argv[:3] == ["ip", "-j", "address"]:
+                return responses[1]
+            if argv[:4] == ["ip", "-j", "route", "show"]:
+                return responses[2]
+            if argv[:2] == ["nft", "-c"]:
+                return ""
+            return ""
+
+        with patch("rhos.linux.run", side_effect=fake_run), patch("builtins.open", unittest.mock.mock_open(read_data="0")):
+            apply_config(config)
+        argv = [item[0] for item in commands]
+        self.assertIn(["ip", "address", "replace", "192.0.2.1/24", "dev", "lan0"], argv)
+        self.assertIn(["ip", "route", "replace", "198.51.100.0/24", "via", "192.0.2.254", "metric", "10"], argv)
+        self.assertIn(["sysctl", "-w", "net.ipv4.ip_forward=1"], argv)
 
     def test_cli_and_store_share_candidate(self):
         result = execute(self.store, "/ip address add address=192.0.2.1/24 interface=eth1")

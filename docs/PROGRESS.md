@@ -10,16 +10,17 @@
 - Cross-process serialization and stale revision checks for configuration mutations.
 - Candidate changes persist through restart, and CLI displays candidate addresses.
 - First administrator bootstrap, scrypt password storage, signed short-lived sessions, protected configuration reads, CSRF checks on mutations, and CLI commit authentication.
+- nftables policy generation for RHOS-owned IPv4 NAT and default-drop forward filtering, plus desired-state address/route reconciliation with compensating rollback.
 
 ## Verified
 
-- `python -m unittest discover -s tests -v`: 13 tests passed after auth and CSRF coverage.
+- `python -m unittest discover -s tests -v`: 16 tests passed after authentication and network policy coverage.
 - `python -m compileall -q rhos tests`: passed.
 - `git diff --check`: passed.
 - Started the real Uvicorn service and made HTTP requests to system information, dashboard, and configuration endpoints. All returned expected responses.
 - Live interface/route collection requires the `ip` tool. The environment provides it, but host network apply was not run.
 
-The environment does not include nftables, QEMU, Rust/Cargo, or a working Go compiler command. The container is unprivileged, so host network apply and kernel forwarding integration are not verifiable here. The FastAPI test client emitted a Starlette deprecation warning about its installed httpx integration, while the tests passed.
+The environment does not include nftables, QEMU, Rust/Cargo, or a working Go compiler command. The container is unprivileged, so host network apply and kernel forwarding integration are not verifiable here. The differential apply test uses a controlled command runner and does not prove kernel behavior. The FastAPI test client emitted a Starlette deprecation warning about its installed httpx integration, while the tests passed.
 
 ## Not implemented
 

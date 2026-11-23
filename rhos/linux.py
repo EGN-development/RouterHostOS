@@ -37,37 +37,83 @@ def routes() -> list[dict[str, Any]]:
     return json.loads(run(["ip", "-j", "route", "show", "table", "all"]))
 
 
+def firewall_script(config: dict[str, Any]) -> str:
+    firewall = config["firewall"]
+    lines = [
+        "delete table inet rhos_filter",
+        "delete table ip rhos_nat",
+        "table inet rhos_filter {",
+        " chain forward {",
+        "  type filter hook forward priority filter; policy drop;",
+        "  ct state established,related accept",
+    ]
+    for rule in firewall["forward"]:
+        lines.append(
+            f'  iifname "{rule["in-interface"]}" oifname "{rule["out-interface"]}" {rule["action"]}'
+        )
+    lines += [" }", "}"]
+    lines.append("table ip rhos_nat {")
+    if firewall["nat"]:
+        lines += [" chain postrouting {", "  type nat hook postrouting priority srcnat; policy accept;"]
+        for rule in firewall["nat"]:
+            lines.append(f'  ip saddr {rule["source"]} oifname "{rule["out-interface"]}" masquerade')
+        lines.append(" }")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _ensure_rhos_tables() -> None:
+    listing = json.loads(run(["nft", "-j", "list", "tables"]))
+    existing = {(item.get("family"), item.get("name")) for item in listing.get("nftables", []) if "table" in item for item in [item["table"]]}
+    create = []
+    for family, name in (("inet", "rhos_filter"), ("ip", "rhos_nat")):
+        if (family, name) not in existing:
+            create.append(f"add table {family} {name}")
+    if create:
+        run(["nft", "-f", "-"], input_text="\n".join(create) + "\n")
+
+
 def apply_config(config: dict[str, Any]) -> None:
-    nat = config["firewall"]["nat"]
-    script = ["destroy table ip rhos", "table ip rhos {"]
-    if nat:
-        script += [" chain postrouting {", "  type nat hook postrouting priority srcnat; policy accept;"]
-        for rule in nat:
-            script.append(f'  ip saddr {rule["source"]} oifname "{rule["out-interface"]}" masquerade')
-        script.append(" }")
-    script.append("}")
-    run(["nft", "-c", "-f", "-"], input_text="\n".join(script) + "\n")
-    original_forwarding = open("/proc/sys/net/ipv4/ip_forward").read().strip()
-    original_addresses = json.loads(run(["ip", "-j", "address", "show"]))
-    original_routes = json.loads(run(["ip", "-j", "route", "show", "table", "main"]))
+    _ensure_rhos_tables()
+    script = firewall_script(config)
+    run(["nft", "-c", "-f", "-"], input_text=script)
+    desired_addresses = {(item["interface"], item["address"]) for item in config["addresses"]}
+    desired_routes = {(item["dst-address"], item["gateway"], item["metric"]) for item in config["routes"]}
+    current_addresses = json.loads(run(["ip", "-j", "address", "show"]))
+    current_routes = json.loads(run(["ip", "-j", "route", "show", "table", "main"]))
+    saved_forwarding = open("/proc/sys/net/ipv4/ip_forward").read().strip()
+    saved_addresses = {
+        (dev, f'{info["local"]}/{info["prefixlen"]}')
+        for link in current_addresses
+        if (dev := link.get("ifname"))
+        for info in link.get("addr_info", [])
+        if info.get("family") == "inet" and info.get("scope") == "global"
+    }
+    saved_routes = {
+        (route.get("dst", "default"), route["gateway"], int(route.get("metric", 0)))
+        for route in current_routes
+        if route.get("gateway")
+    }
     try:
-        run(["sysctl", "-w", "net.ipv4.ip_forward=1"])
-        for item in config["addresses"]:
-            run(["ip", "address", "replace", item["address"], "dev", item["interface"]])
-        for item in config["routes"]:
-            run(["ip", "route", "replace", item["dst-address"], "via", item["gateway"], "metric", str(item["metric"])])
-        run(["nft", "-f", "-"], input_text="\n".join(script) + "\n")
+        for interface, address in saved_addresses - desired_addresses:
+            run(["ip", "address", "del", address, "dev", interface])
+        for interface, address in desired_addresses - saved_addresses:
+            run(["ip", "address", "replace", address, "dev", interface])
+        for destination, gateway, metric in saved_routes - desired_routes:
+            run(["ip", "route", "del", destination, "via", gateway, "metric", str(metric)])
+        for destination, gateway, metric in desired_routes - saved_routes:
+            run(["ip", "route", "replace", destination, "via", gateway, "metric", str(metric)])
+        forwarding = "1" if config["addresses"] or config["routes"] or config["firewall"]["forward"] else saved_forwarding
+        run(["sysctl", "-w", f"net.ipv4.ip_forward={forwarding}"])
+        run(["nft", "-f", "-"], input_text=script)
     except (RuntimeError, OSError):
-        for route in original_routes:
-            if route.get("dst") and route.get("gateway") and route.get("dev"):
-                subprocess.run(["ip", "route", "replace", route["dst"], "via", route["gateway"], "dev", route["dev"]], capture_output=True, timeout=15)
-        for interface in original_addresses:
-            dev = interface.get("ifname")
-            if not dev:
-                continue
-            for info in interface.get("addr_info", []):
-                if info.get("scope") == "global" and info.get("local") and info.get("prefixlen") is not None:
-                    cidr = f'{info["local"]}/{info["prefixlen"]}'
-                    subprocess.run(["ip", "address", "replace", cidr, "dev", dev], capture_output=True, timeout=15)
-        run(["sysctl", "-w", f"net.ipv4.ip_forward={original_forwarding}"])
+        for interface, address in desired_addresses - saved_addresses:
+            subprocess.run(["ip", "address", "del", address, "dev", interface], capture_output=True, timeout=15)
+        for interface, address in saved_addresses - desired_addresses:
+            subprocess.run(["ip", "address", "replace", address, "dev", interface], capture_output=True, timeout=15)
+        for destination, gateway, metric in desired_routes - saved_routes:
+            subprocess.run(["ip", "route", "del", destination, "via", gateway, "metric", str(metric)], capture_output=True, timeout=15)
+        for destination, gateway, metric in saved_routes - desired_routes:
+            subprocess.run(["ip", "route", "replace", destination, "via", gateway, "metric", str(metric)], capture_output=True, timeout=15)
+        subprocess.run(["sysctl", "-w", f"net.ipv4.ip_forward={saved_forwarding}"], capture_output=True, timeout=15)
         raise

@@ -7,10 +7,10 @@ RouterHost OS is an early Linux router appliance project. The current repository
 - Persistent JSON configuration with schema validation, revision history, and optimistic revision checks.
 - API and interactive CLI use the same configuration service.
 - Read-only interface and route inventory on Linux.
-- Optional application of IPv4 forwarding, addresses, static routes, and a basic nftables NAT policy. Applying host networking is disabled unless explicitly enabled.
+- Optional application of IPv4 forwarding, addresses, static routes, and an RHOS-owned nftables forward/NAT policy. Applying host networking is disabled unless explicitly enabled.
 - Server-rendered management page.
 
-The prototype does not yet provide authentication, safe confirmed commits, FRR, DHCP, VPN, a hardened service sandbox, or an operating-system image. Do not expose the management API to untrusted networks. Do not enable host networking on a machine whose routes you rely on.
+The prototype does not yet provide confirmed commits, FRR, DHCP, VPN, a hardened service sandbox, or an operating-system image. Do not expose the management API to untrusted networks. Do not enable host networking on a machine whose routes you rely on.
 
 ## Requirements
 

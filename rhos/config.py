@@ -20,7 +20,7 @@ DEFAULT: dict[str, Any] = {
     "interfaces": [],
     "addresses": [],
     "routes": [],
-    "firewall": {"nat": []},
+    "firewall": {"forward": [], "nat": []},
 }
 
 
@@ -92,8 +92,18 @@ def validate(config: Any) -> dict[str, Any]:
         seen_routes.add(key)
 
     firewall = config["firewall"]
-    if not isinstance(firewall, dict) or set(firewall) != {"nat"} or not isinstance(firewall["nat"], list):
-        raise ConfigError("firewall must contain a nat list")
+    if not isinstance(firewall, dict) or set(firewall) != {"forward", "nat"} or not isinstance(firewall["nat"], list) or not isinstance(firewall["forward"], list):
+        raise ConfigError("firewall must contain forward and nat lists")
+    for rule in firewall["forward"]:
+        if not isinstance(rule, dict) or set(rule) != {"in-interface", "out-interface", "action"}:
+            raise ConfigError("forward rules require in-interface, out-interface, and action")
+        for field in ("in-interface", "out-interface"):
+            value = rule[field]
+            if not isinstance(value, str) or not value or len(value) > 15 or not value.replace("_", "a").replace("-", "a").isalnum():
+                raise ConfigError(f"invalid forward rule {field}")
+        if rule["action"] not in ("accept", "drop"):
+            raise ConfigError("forward action must be accept or drop")
+    nat_keys = set()
     for item in firewall["nat"]:
         if not isinstance(item, dict) or set(item) != {"out-interface", "source"}:
             raise ConfigError("NAT entries require out-interface and source")
@@ -103,6 +113,10 @@ def validate(config: Any) -> dict[str, Any]:
             ipaddress.ip_network(item["source"], strict=False)
         except (ValueError, TypeError) as exc:
             raise ConfigError("invalid NAT source network") from exc
+        key = (item["out-interface"], item["source"])
+        if key in nat_keys:
+            raise ConfigError("duplicate NAT rule")
+        nat_keys.add(key)
     return config
 
 

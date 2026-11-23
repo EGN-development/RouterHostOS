@@ -167,6 +167,12 @@ class Store:
             validate(loaded["config"])
             if "candidate" in loaded:
                 validate(loaded["candidate"])
+            pending = loaded.get("pending_confirmed")
+            if pending is not None:
+                if not isinstance(pending, dict) or type(pending.get("revision")) is not int or type(pending.get("expires_at")) not in (int, float):
+                    raise ValueError("invalid pending confirmed commit metadata")
+                validate(pending.get("previous"))
+                validate(pending.get("candidate"))
             if type(loaded["revision"]) is not int or loaded["revision"] < 0 or not isinstance(loaded["history"], list):
                 raise ValueError("invalid state metadata")
             for entry in loaded["history"]:
@@ -184,9 +190,103 @@ class Store:
                 self._reload()
                 if expected_revision != self.state["revision"]:
                     raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("configuration is locked while confirmed commit is pending")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("a confirmed commit is awaiting confirmation")
                 self.state["candidate"] = copy.deepcopy(config)
                 self._persist()
                 return self.snapshot()
+
+    def commit_confirmed(self, expected_revision: int, timeout: int) -> dict[str, Any]:
+        if type(timeout) is not int or not 30 <= timeout <= 3600:
+            raise ConfigError("confirmed commit timeout must be between 30 and 3600 seconds")
+        with self.lock:
+            with self._locked():
+                self._reload()
+                if expected_revision != self.state["revision"]:
+                    raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("a confirmed commit is already pending")
+                if os.getenv("RHOS_ALLOW_NETWORK_APPLY") != "1":
+                    raise ConfigError("network apply is disabled for this service profile")
+                from .linux import apply_via_worker
+                previous = copy.deepcopy(self.state["config"])
+                candidate = copy.deepcopy(self.state.get("candidate", previous))
+                validate(candidate)
+                apply_via_worker(previous)
+                try:
+                    apply_via_worker(candidate)
+                except Exception:
+                    apply_via_worker(previous)
+                    raise
+                original_state = copy.deepcopy(self.state)
+                self.state["revision"] += 1
+                self.state["config"] = candidate
+                self.state["pending_confirmed"] = {
+                    "revision": self.state["revision"],
+                    "previous": previous,
+                    "candidate": candidate,
+                    "expires_at": time.time() + timeout,
+                }
+                try:
+                    self._persist()
+                except OSError:
+                    self.state = original_state
+                    try:
+                        apply_via_worker(previous)
+                    except Exception as rollback_error:
+                        raise ConfigError(f"confirmed commit persistence failed and network rollback failed: {rollback_error}")
+                    raise
+                return self.snapshot()
+
+    def confirm(self, revision: int) -> dict[str, Any]:
+        with self.lock:
+            with self._locked():
+                self._reload()
+                pending = self.state.get("pending_confirmed")
+                if not pending or pending["revision"] != revision:
+                    raise Conflict("no matching confirmed commit is pending")
+                if pending["expires_at"] <= time.time():
+                    self._restore_pending(pending)
+                    raise Conflict("confirmed commit expired and was rolled back")
+                self.state["history"] = (self.state["history"] + [{
+                    "revision": revision,
+                    "timestamp": int(time.time()),
+                    "config": copy.deepcopy(pending["candidate"]),
+                }])[-50:]
+                self.state.pop("pending_confirmed", None)
+                self.state.pop("candidate", None)
+                self._persist()
+                return self.snapshot()
+
+    def recover_expired_confirmed(self) -> bool:
+        with self.lock:
+            with self._locked():
+                self._reload()
+                pending = self.state.get("pending_confirmed")
+                if not pending or pending["expires_at"] > time.time():
+                    return False
+                self._restore_pending(pending)
+                return True
+
+    def _restore_pending(self, pending: dict[str, Any]) -> None:
+        from .linux import apply_via_worker
+        apply_via_worker(pending["previous"])
+        original_state = copy.deepcopy(self.state)
+        self.state["config"] = copy.deepcopy(pending["previous"])
+        self.state["candidate"] = copy.deepcopy(pending["candidate"])
+        self.state["revision"] += 1
+        self.state.pop("pending_confirmed", None)
+        try:
+            self._persist()
+        except OSError:
+            self.state = original_state
+            try:
+                apply_via_worker(pending["candidate"])
+            except Exception as rollback_error:
+                raise ConfigError(f"rollback persistence failed and restoring candidate network failed: {rollback_error}")
+            raise
 
     def mutate(self, expected_revision: int, operation: str, values: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -194,6 +294,8 @@ class Store:
                 self._reload()
                 if expected_revision != self.state["revision"]:
                     raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("configuration is locked while confirmed commit is pending")
                 candidate = copy.deepcopy(self.state.get("candidate", self.state["config"]))
                 if operation == "address_add":
                     candidate["addresses"].append({"address": values["address"], "interface": values["interface"]})
@@ -225,6 +327,8 @@ class Store:
                 self._reload()
                 if expected_revision != self.state["revision"]:
                     raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("configuration is locked while confirmed commit is pending")
                 candidate = copy.deepcopy(self.state.get("candidate", self.state["config"]))
                 validate(candidate)
                 if candidate == self.state["config"] and not apply:
@@ -270,6 +374,8 @@ class Store:
                 self._reload()
                 if expected_revision != self.state["revision"]:
                     raise Conflict(f"revision conflict: expected {expected_revision}, current {self.state['revision']}")
+                if self.state.get("pending_confirmed"):
+                    raise Conflict("configuration is locked while confirmed commit is pending")
                 old = next((entry["config"] for entry in self.state["history"] if entry["revision"] == revision), None)
                 if old is None:
                     raise ConfigError("requested revision is not in retained history")

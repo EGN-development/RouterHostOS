@@ -18,10 +18,11 @@
 - Dedicated capability-limited root network worker with a group-restricted Unix socket protocol. API process receives no network capability.
 - Debian amd64 raw/qcow2 builder and QEMU serial boot smoke script.
 - Indexed CLI address/route candidate edits, route set/remove, and separate configured versus active route views.
+- Confirmed network commits with persisted timeout, explicit confirmation, and startup expiry recovery.
 
 ## Verified
 
-- `python -m unittest discover -s tests -v`: 26 tests passed, including worker protocol, candidate editing, and simulated apply/persistence failure coverage.
+- `python -m unittest discover -s tests -v`: 32 tests passed, including confirmed commit, expiry, process-restart recovery, and persistence-failure rollback.
 - Worker protocol tests cover operation allowlisting and worker error handling.
 - API login throttling and browser security response headers.
 - `python -m compileall -q rhos tests`: passed.
@@ -33,7 +34,7 @@ The environment does not include nftables, QEMU, Rust/Cargo, or a working Go com
 
 ## Not implemented
 
-Actual bootable image build and QEMU boot verification, TLS termination, granular RBAC/user management, crash-safe confirmed commit timer, crash-atomic network rollback, FRR, DHCP/DNS, IPv6, WireGuard, advanced firewall, production frontend, signed updates, and multi-VM integration tests.
+Actual bootable image build and QEMU boot verification, TLS termination, granular RBAC/user management, crash-safe apply journaling before the pending marker is persisted, FRR, DHCP/DNS, IPv6, WireGuard, advanced firewall, production frontend, signed updates, and multi-VM integration tests.
 
 ## Next step
 

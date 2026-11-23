@@ -31,6 +31,12 @@ class CommitBody(BaseModel):
     apply: bool = False
 
 
+class ConfirmedCommitBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revision: int
+    timeout: int = 120
+
+
 class RollbackBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revision: int
@@ -194,6 +200,16 @@ def create_app(state_dir: str | Path | None = None) -> FastAPI:
     def commit(body: CommitBody, request: Request):
         current_admin(request, csrf=True)
         return call(lambda: store.commit(body.revision, body.apply))
+
+    @app.post("/api/v1/configuration/commit-confirmed")
+    def commit_confirmed(body: ConfirmedCommitBody, request: Request):
+        current_admin(request, csrf=True)
+        return call(lambda: store.commit_confirmed(body.revision, body.timeout))
+
+    @app.post("/api/v1/configuration/confirm")
+    def confirm_configuration(body: CommitBody, request: Request):
+        current_admin(request, csrf=True)
+        return call(lambda: store.confirm(body.revision))
 
     @app.post("/api/v1/configuration/rollback")
     def rollback(body: RollbackBody, request: Request):

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from rhos.api import create_app
 
@@ -49,6 +50,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         response = self.client.post("/api/v1/configuration/commit", json={"revision": 0, "apply": False}, headers={"X-CSRF-Token": "wrong"})
         self.assertEqual(response.status_code, 403)
+
+    def test_confirmed_commit_endpoints_require_admin_csrf_and_record_pending_revision(self):
+        config = {"system": {"hostname": "edge01"}, "interfaces": [], "addresses": [], "routes": [], "firewall": {"forward": [], "nat": []}}
+        self.client.put("/api/v1/configuration", headers={"If-Match": "0", **self.headers}, json={"config": config})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker"):
+            response = self.client.post("/api/v1/configuration/commit-confirmed", headers=self.headers, json={"revision": 0, "timeout": 30})
+            self.assertEqual(response.status_code, 200)
+            revision = response.json()["revision"]
+            confirm = self.client.post("/api/v1/configuration/confirm", headers=self.headers, json={"revision": revision})
+        self.assertEqual(confirm.status_code, 200)
+        self.assertNotIn("pending_confirmed", confirm.json())
 
     def test_login_rejects_wrong_password_and_bootstrap_is_one_time(self):
         wrong = self.client.post("/api/v1/auth/login", json={"username": "admin", "password": "incorrect password"})

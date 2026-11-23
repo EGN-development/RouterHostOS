@@ -54,6 +54,8 @@ CLI changes update the candidate configuration only. Interactive commit checks t
 - `GET /api/v1/configuration`
 - `PUT /api/v1/configuration` with `If-Match: <revision>`
 - `POST /api/v1/configuration/commit` with `{"revision": 1, "apply": false}`
+- `POST /api/v1/configuration/commit-confirmed` with `{"revision": 1, "timeout": 120}`
+- `POST /api/v1/configuration/confirm` with `{"revision": 2}`
 
 ## Development
 

@@ -163,6 +163,53 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(apply.call_count, 3)
         self.assertEqual(self.store.snapshot()["revision"], 0)
 
+    def test_confirmed_commit_and_confirmation(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker"):
+            pending = self.store.commit_confirmed(0, 30)
+            self.assertIn("pending_confirmed", pending)
+            confirmed = self.store.confirm(pending["revision"])
+        self.assertEqual(confirmed["config"]["addresses"][0]["address"], "192.0.2.1/24")
+        self.assertNotIn("pending_confirmed", confirmed)
+        self.assertEqual(len(confirmed["history"]), 1)
+
+    def test_confirmed_commit_expiry_restores_previous_state(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker") as apply:
+            pending = self.store.commit_confirmed(0, 30)
+            with patch("rhos.config.time.time", return_value=pending["pending_confirmed"]["expires_at"] + 1):
+                self.assertTrue(self.store.recover_expired_confirmed())
+        restored = self.store.snapshot()
+        self.assertEqual(restored["config"]["addresses"], [])
+        self.assertNotIn("pending_confirmed", restored)
+        self.assertEqual(apply.call_args_list[-1].args[0]["addresses"], [])
+
+    def test_expired_confirmed_commit_recovers_after_store_restart(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker"):
+            self.store.commit_confirmed(0, 30)
+        restarted = Store(self.temp.name)
+        with patch("rhos.config.time.time", return_value=10**12), patch("rhos.linux.apply_via_worker"):
+            self.assertTrue(restarted.recover_expired_confirmed())
+        self.assertEqual(restarted.snapshot()["config"]["addresses"], [])
+
+    def test_candidate_changes_are_locked_during_confirmed_commit(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker"):
+            pending = self.store.commit_confirmed(0, 30)
+            with self.assertRaisesRegex(Conflict, "locked"):
+                self.store.mutate(pending["revision"], "route_add", {"dst-address": "198.51.100.0/24", "gateway": "192.0.2.254"})
+
+    def test_confirmed_commit_persistence_failure_restores_previous_network(self):
+        self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
+        with patch.dict("os.environ", {"RHOS_ALLOW_NETWORK_APPLY": "1"}), patch("rhos.linux.apply_via_worker") as apply:
+            with patch.object(self.store, "_persist", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    self.store.commit_confirmed(0, 30)
+        self.assertEqual(apply.call_count, 3)
+        self.assertEqual(apply.call_args_list[-1].args[0]["addresses"], [])
+        self.assertEqual(self.store.snapshot()["revision"], 0)
+
     def test_rollback_stages_historical_candidate(self):
         self.store.mutate(0, "address_add", {"address": "192.0.2.1/24", "interface": "eth1"})
         self.store.commit(0)

@@ -310,6 +310,16 @@ class Store:
                     route["dst-address"] = values.get("dst-address", route["dst-address"])
                     route["gateway"] = values.get("gateway", route["gateway"])
                     route["metric"] = int(values.get("metric", route["metric"]))
+                elif operation == "interface_set":
+                    interface = next((entry for entry in candidate["interfaces"] if entry["name"] == values["name"]), None)
+                    if interface is None:
+                        raise ConfigError(f"configured interface {values['name']!r} was not found")
+                    if "mtu" in values:
+                        interface["mtu"] = int(values["mtu"])
+                    if "enabled" in values:
+                        if values["enabled"] not in ("true", "false"):
+                            raise ConfigError("enabled must be true or false")
+                        interface["enabled"] = values["enabled"] == "true"
                 elif operation == "interface_add":
                     candidate["interfaces"].append({"name": values["name"], "enabled": values.get("enabled", "true").lower() == "true", "mtu": int(values.get("mtu", 1500))})
                 elif operation == "nat_add":

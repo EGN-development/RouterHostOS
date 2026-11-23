@@ -51,6 +51,14 @@ def execute(store: Store, command: str) -> str:
             f"{row['name']:<16} mac={row['mac'] or '-'} state={row['state']} mtu={row['mtu']}"
             for row in interfaces()
         )
+    if tokens[:2] == ["/interface", "set"] or tokens[:1] == ["interface-set"]:
+        offset = 2 if tokens[0] == "/interface" else 1
+        values = parse_values(tokens[offset:])
+        if "name" not in values or not (set(values) & {"mtu", "enabled"}) or set(values) - {"name", "mtu", "enabled"}:
+            raise ConfigError("interface set requires name= and mtu= and/or enabled=true|false")
+        snap = store.snapshot()
+        store.mutate(snap["revision"], "interface_set", values)
+        return "candidate interface updated"
     if tokens in (["/ip", "route", "print"], ["route", "print"]):
         snapshot = store.snapshot()
         config = snapshot.get("candidate", snapshot["config"])

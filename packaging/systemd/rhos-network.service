@@ -23,6 +23,8 @@ RestrictAddressFamilies=AF_UNIX
 CapabilityBoundingSet=CAP_NET_ADMIN
 AmbientCapabilities=CAP_NET_ADMIN
 ReadWritePaths=/run/rhos
+StateDirectory=rhos-network
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target
